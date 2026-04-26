@@ -278,6 +278,8 @@ export const searchVideos = createServerFn({ method: "POST" })
         results: [] as ResultVideo[],
         playlists: [] as ResultPlaylist[],
         effectiveQuery: "",
+        contextMessage: "Search is unavailable until video search is configured.",
+        nextPageToken: null as string | null,
       };
     }
 
