@@ -16,16 +16,12 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Row = {
-  mode: string;
-  final_intent: string | null;
-  watch_seconds: number;
-  effective_seconds: number;
-  seek_count: number;
-  duration_seconds: number | null;
+  final_intent: string;
+  watched_duration: number;
+  skip_count: number;
   watched_at: string;
-  title: string | null;
-  channel: string | null;
-  category: string | null;
+  title: string;
+  channel_title: string;
 };
 
 // Theme-aware chart colors using CSS variables (works in light + dark)
@@ -46,8 +42,8 @@ function Dashboard() {
   useEffect(() => {
     if (!user) return;
     supabase
-      .from("watch_history")
-      .select("mode, final_intent, watch_seconds, effective_seconds, seek_count, duration_seconds, watched_at, title, channel, category")
+      .from("video_history")
+      .select("final_intent, watched_duration, skip_count, watched_at, title, channel_title")
       .eq("user_id", user.id)
       .order("watched_at", { ascending: false })
       .limit(500)
@@ -57,19 +53,19 @@ function Dashboard() {
   const stats = useMemo(() => {
     if (!rows) return null;
     // Use effective_seconds as primary truth (only seconds actually watched)
-    const totalEff = rows.reduce((s, r) => s + (r.effective_seconds || 0), 0);
-    const totalRaw = rows.reduce((s, r) => s + (r.watch_seconds || 0), 0);
-    const skippedSec = Math.max(0, totalRaw - totalEff);
-    const totalSeeks = rows.reduce((s, r) => s + (r.seek_count || 0), 0);
+    const totalEff = rows.reduce((s, r) => s + (r.watched_duration || 0), 0);
+    const totalRaw = totalEff;
+    const skippedSec = 0;
+    const totalSeeks = rows.reduce((s, r) => s + (r.skip_count || 0), 0);
 
     // Use final_intent (content-tied) instead of session mode for accuracy
-    const intentOf = (r: Row) => (r.final_intent || r.mode) as string;
+    const intentOf = (r: Row) => r.final_intent as string;
     const byMode: Record<string, number> = {};
-    for (const r of rows) byMode[intentOf(r)] = (byMode[intentOf(r)] || 0) + (r.effective_seconds || 0);
-    const learn = byMode["learn"] || 0;
-    const ent = byMode["relax"] || 0;
-    const find = byMode["find"] || 0;
-    const explore = byMode["explore"] || 0;
+    for (const r of rows) byMode[intentOf(r)] = (byMode[intentOf(r)] || 0) + (r.watched_duration || 0);
+    const learn = byMode["Learning"] || 0;
+    const ent = byMode["Entertainment"] || 0;
+    const find = byMode["Other"] || 0;
+    const explore = 0;
 
     const learnPct = totalEff ? Math.round((learn / totalEff) * 100) : 0;
     const entPct = totalEff ? Math.round((ent / totalEff) * 100) : 0;
