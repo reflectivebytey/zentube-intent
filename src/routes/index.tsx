@@ -139,10 +139,10 @@ function HomePage() {
 }
 
 function ConfirmIntent({
-  mode, query, onCancel, onChangeIntent, onProceed,
+  mode, query, onCancel, onModeChange, onProceed,
 }: {
   mode: Mode; query: string;
-  onCancel: () => void; onChangeIntent: () => void; onProceed: () => void;
+  onCancel: () => void; onModeChange: (mode: Mode) => void; onProceed: () => void;
 }) {
   // Esc to close
   useEffect(() => {
@@ -164,19 +164,33 @@ function ConfirmIntent({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl" aria-hidden>{MODES[mode].emoji}</span>
-            <div>
-              <div className="text-sm uppercase tracking-wider text-muted-foreground">Searching with intent</div>
-              <div className="text-lg font-semibold text-foreground">{MODES[mode].label}</div>
-            </div>
+          <div>
+            <div className="text-sm uppercase tracking-wider text-muted-foreground">Choose intent</div>
+            <div className="text-lg font-semibold text-foreground">Tune this search</div>
           </div>
           <button onClick={onCancel} className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <p className="mt-3 text-sm text-muted-foreground">{INTENT_DESCRIPTIONS[mode]}</p>
+        <div className="mt-5 grid grid-cols-4 gap-1 rounded-lg border border-border bg-surface/50 p-1">
+          {(Object.keys(MODES) as Mode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onModeChange(m)}
+              className={
+                "rounded-md px-2 py-2 text-xs transition-colors sm:text-sm " +
+                (mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")
+              }
+            >
+              <span className="mr-1" aria-hidden>{MODES[m].emoji}</span>
+              {MODES[m].label}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-4 min-h-10 text-sm text-muted-foreground">{INTENT_DESCRIPTIONS[mode]}</p>
 
         <div className="mt-4 rounded-md bg-surface/60 px-3 py-2 text-sm">
           <span className="text-muted-foreground">You'll search for: </span>
@@ -184,12 +198,6 @@ function ConfirmIntent({
         </div>
 
         <div className="mt-6 flex items-center justify-end gap-2">
-          <button
-            onClick={onChangeIntent}
-            className="rounded-md border border-border bg-surface px-4 py-2 text-sm text-foreground hover:bg-accent"
-          >
-            Change intent
-          </button>
           <button
             onClick={onProceed}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
