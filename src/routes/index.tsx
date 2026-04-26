@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MODES, type Mode } from "@/lib/intent";
 import { useSessionState } from "@/contexts/SessionStateContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Leaf, Search, ArrowRight, ChevronDown, Check, X } from "lucide-react";
+import { Leaf, Search, ArrowRight, X } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,13 +24,6 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-const PLACEHOLDERS: Record<Mode, string> = {
-  learn: "What do you want to learn today?",
-  relax: "What would you like to unwind with?",
-  find: "Find an exact video…",
-  explore: "What should we explore together?",
-};
-
 const INTENT_DESCRIPTIONS: Record<Mode, string> = {
   learn: "Tutorials, courses, and explainers — with notes and focus tools.",
   relax: "Music, comedy, and easy watching — minimal UI, gentle nudges.",
@@ -44,26 +37,12 @@ function HomePage() {
   const { user } = useAuth();
   const [selected, setSelected] = useState<Mode>("learn");
   const [q, setQ] = useState("");
-  const [intentOpen, setIntentOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const intentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     resetSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Click-outside for the intent dropdown
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (!intentOpen) return;
-      if (intentRef.current && !intentRef.current.contains(e.target as Node)) {
-        setIntentOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [intentOpen]);
 
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,49 +94,10 @@ function HomePage() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder={PLACEHOLDERS[selected]}
+                placeholder="Search videos, creators, topics, or playlists"
                 className="min-w-0 flex-1 bg-transparent py-3 text-base outline-none placeholder:text-muted-foreground"
                 autoFocus
               />
-
-              {/* Intent dropdown */}
-              <div ref={intentRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIntentOpen((v) => !v)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/80 px-3 py-2 text-sm text-foreground hover:border-primary/40"
-                >
-                  <span aria-hidden>{MODES[selected].emoji}</span>
-                  <span className="hidden sm:inline">{MODES[selected].label}</span>
-                  <ChevronDown className={"h-3.5 w-3.5 text-muted-foreground transition-transform " + (intentOpen ? "rotate-180" : "")} />
-                </button>
-                {intentOpen && (
-                  <div className="absolute right-0 top-full z-30 mt-2 w-72 overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl backdrop-blur">
-                    {(Object.keys(MODES) as Mode[]).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => { setSelected(m); setIntentOpen(false); }}
-                        className={
-                          "flex w-full items-start gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-accent " +
-                          (selected === m ? "bg-accent/50" : "")
-                        }
-                      >
-                        <span className="mt-0.5 text-base" aria-hidden>{MODES[m].emoji}</span>
-                        <span className="flex-1">
-                          <span className="flex items-center gap-2 text-sm text-foreground">
-                            {MODES[m].label}
-                            {selected === m && <Check className="h-3.5 w-3.5 text-primary" />}
-                          </span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
-                            {INTENT_DESCRIPTIONS[m]}
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               <button
                 type="submit"
@@ -170,7 +110,7 @@ function HomePage() {
             </div>
 
             <p className="mt-5 text-sm text-muted-foreground">
-              Pick why you're here — we'll tune the results to your intent.
+              Search first, then choose the intent so results stay focused.
             </p>
           </form>
         </div>
@@ -190,7 +130,7 @@ function HomePage() {
           mode={selected}
           query={q.trim()}
           onCancel={() => setConfirming(false)}
-          onChangeIntent={() => { setConfirming(false); setIntentOpen(true); }}
+          onModeChange={setSelected}
           onProceed={proceed}
         />
       )}
