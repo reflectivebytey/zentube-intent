@@ -4,14 +4,20 @@ import { memo, useEffect, useState } from "react";
 import { searchVideos, getPlaylistItems, type ResultPlaylist } from "@/server/youtube.functions";
 import { useSessionState } from "@/contexts/SessionStateContext";
 import { formatDuration, MODES, detectMismatch, type Mode, type ResultVideo } from "@/lib/intent";
+import { Player } from "@/components/Player";
 import { ArrowLeft, RefreshCw, Sliders, Search as SearchIcon, AlertCircle, ListVideo, ChevronDown, Play } from "lucide-react";
 
 export const Route = createFileRoute("/results")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    playlistId: typeof s.playlistId === "string" ? s.playlistId : "",
+    playlistTitle: typeof s.playlistTitle === "string" ? s.playlistTitle : "",
+  }),
   head: () => ({ meta: [{ title: "Results — ZenTube" }] }),
   component: ResultsPage,
 });
 
 function ResultsPage() {
+  const routeSearch = Route.useSearch();
   const { mode, refinement, query, setMode } = useSessionState();
   const navigate = useNavigate();
   const [variation, setVariation] = useState(0);
@@ -21,8 +27,12 @@ function ResultsPage() {
   const [pageToken, setPageToken] = useState<string | undefined>();
 
   useEffect(() => {
-    if (!mode || !query) navigate({ to: "/" });
-  }, [mode, query, navigate]);
+    if (!routeSearch.playlistId && (!mode || !query)) navigate({ to: "/" });
+  }, [mode, query, navigate, routeSearch.playlistId]);
+
+  if (routeSearch.playlistId) {
+    return <PlaylistView playlistId={routeSearch.playlistId} title={routeSearch.playlistTitle} />;
+  }
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["search", mode, query, refinement?.chips, refinement?.freeform, variation, sort, duration, pageToken],
@@ -169,6 +179,62 @@ function ResultsSkeleton() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function PlaylistView({ playlistId, title }: { playlistId: string; title: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["playlist-view", playlistId],
+    queryFn: () => getPlaylistItems({ data: { playlistId } }),
+    staleTime: 10 * 60 * 1000,
+  });
+  const items = data?.items ?? [];
+  const first = items[0];
+  const rest = items.slice(1);
+  return (
+    <div className="zen-container-wide py-8 sm:py-10">
+      <Link to="/results" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to results
+      </Link>
+      <div className="mt-6">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/60 px-3 py-1 text-xs uppercase tracking-wider text-primary">
+          <ListVideo className="h-3.5 w-3.5" /> Playlist focus mode
+        </div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title || "Playlist"}</h1>
+      </div>
+      {isLoading ? (
+        <ResultsSkeleton />
+      ) : !first ? (
+        <div className="mt-8 zen-card p-6 text-sm text-muted-foreground">No playlist videos available.</div>
+      ) : (
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0">
+            <Player videoId={first.videoId} />
+            <h2 className="mt-4 text-xl font-semibold leading-snug text-foreground">{first.title}</h2>
+            <div className="mt-1 text-sm text-muted-foreground">{first.channel}</div>
+          </div>
+          <ol className="zen-card max-h-[70vh] overflow-y-auto divide-y divide-border">
+            {rest.map((it) => (
+              <li key={it.videoId}>
+                <Link
+                  to="/watch/$videoId"
+                  params={{ videoId: it.videoId }}
+                  search={{ title: it.title, channel: it.channel, duration: it.durationSeconds, thumbnail: it.thumbnail, t: 0, intent: "" }}
+                  className="flex items-center gap-3 p-3 text-sm transition-colors hover:bg-accent/30"
+                >
+                  <span className="w-6 shrink-0 text-center text-xs tabular-nums text-muted-foreground">{it.position + 1}</span>
+                  <img src={it.thumbnail} alt="" className="aspect-video w-28 rounded object-cover" loading="lazy" />
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-2 text-foreground">{it.title}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{formatDuration(it.durationSeconds)}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
   );
 }
