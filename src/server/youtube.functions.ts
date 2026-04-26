@@ -9,6 +9,9 @@ const SearchInput = z.object({
   chips: z.array(z.string()).max(20).optional(),
   maxResults: z.number().int().min(3).max(15).optional(),
   variation: z.number().int().min(0).max(20).optional(),
+  sort: z.enum(["smart", "relevance", "latest"]).optional(),
+  duration: z.enum(["any", "short", "medium", "long"]).optional(),
+  pageToken: z.string().max(200).optional(),
 });
 
 type Input = z.infer<typeof SearchInput>;
@@ -27,21 +30,69 @@ const VARIATION_SUFFIX = [
   "top",
 ];
 
+type SearchIntent = {
+  freshness: boolean;
+  creator: string | null;
+  contentType: string | null;
+  mood: string | null;
+  transformedQuery: string;
+  message: string;
+};
+
+const FRESHNESS_RE = /\b(new|latest|recent|today|upload|uploaded|newest)\b/i;
+const CONTENT_TYPE_RE = /\b(song|trailer|interview|full movie|movie|challenge|podcast|review|tutorial|course)\b/i;
+const MOOD_RE = /\b(sad|romantic|lofi|chill|emotional|energetic|funny|comedy)\b/i;
+
+function analyzeQuery(rawQuery: string): SearchIntent {
+  const query = rawQuery.trim().replace(/\s+/g, " ");
+  const freshness = FRESHNESS_RE.test(query);
+  const contentType = query.match(CONTENT_TYPE_RE)?.[0]?.toLowerCase() ?? null;
+  const mood = query.match(MOOD_RE)?.[0]?.toLowerCase() ?? null;
+  const creatorCandidate = query
+    .replace(FRESHNESS_RE, " ")
+    .replace(/\b(video|videos|channel|from|by|official)\b/gi, " ")
+    .replace(CONTENT_TYPE_RE, contentType === "challenge" ? "challenge" : " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const creator = creatorCandidate && creatorCandidate.length <= 36 && /[a-z0-9]/i.test(creatorCandidate)
+    ? creatorCandidate
+    : null;
+  const transformedQuery = freshness && creator ? creator : query;
+  const bits: string[] = [];
+  if (freshness) bits.push("latest uploads");
+  if (creator) bits.push(`from ${creator}`);
+  if (contentType && contentType !== "challenge") bits.push(contentType);
+  if (mood) bits.push(`${mood} mood`);
+  return {
+    freshness,
+    creator,
+    contentType,
+    mood,
+    transformedQuery,
+    message: bits.length ? `Showing ${bits.join(" · ")}` : "Showing the most relevant distraction-free matches",
+  };
+}
+
 function buildSearchQuery(input: Input): {
   q: string;
   videoDuration?: "short" | "medium" | "long" | "any";
   order: "relevance" | "viewCount" | "date";
+  intent: SearchIntent;
 } {
   const { query, mode, freeform, chips = [], variation = 0 } = input;
-  const parts: string[] = [query.trim()];
-  let videoDuration: "short" | "medium" | "long" | "any" = "any";
+  const intent = analyzeQuery(query);
+  const parts: string[] = [intent.transformedQuery];
+  let videoDuration: "short" | "medium" | "long" | "any" = input.duration ?? "any";
   let order: "relevance" | "viewCount" | "date" = "relevance";
 
   const chipText = chips.join(" ").toLowerCase();
 
-  if (/under 15|\bshort\b|5 min/.test(chipText)) videoDuration = "short";
-  else if (/around 1 hour|\bmedium\b/.test(chipText)) videoDuration = "medium";
-  else if (/full course|\blong\b/.test(chipText)) videoDuration = "long";
+  if (videoDuration === "any" && /under 15|\bshort\b|5 min/.test(chipText)) videoDuration = "short";
+  else if (videoDuration === "any" && /around 1 hour|\bmedium\b/.test(chipText)) videoDuration = "medium";
+  else if (videoDuration === "any" && /full course|\blong\b/.test(chipText)) videoDuration = "long";
+
+  if (intent.freshness || input.sort === "latest") order = "date";
+  if (input.sort === "relevance") order = "relevance";
 
   if (mode === "learn") {
     if (/beginner/.test(chipText)) parts.push("for beginners");
@@ -76,15 +127,20 @@ function buildSearchQuery(input: Input): {
 
   if (freeform && freeform.trim()) parts.push(freeform.trim());
 
-  // Variation: rotate through helper suffixes & shift order on later refreshes
+  if (intent.contentType && !parts.join(" ").toLowerCase().includes(intent.contentType)) parts.push(intent.contentType);
+  if (intent.mood && !parts.join(" ").toLowerCase().includes(intent.mood)) parts.push(intent.mood);
+
+  // Variation: rotate through helper suffixes without breaking explicit freshness intent
   const v = variation % VARIATION_SUFFIX.length;
   if (v > 0) {
     parts.push(VARIATION_SUFFIX[v]);
-    if (v % 3 === 0) order = "viewCount";
-    else if (v % 3 === 2) order = "date";
+    if (!intent.freshness && input.sort !== "latest") {
+      if (v % 3 === 0) order = "viewCount";
+      else if (v % 3 === 2) order = "date";
+    }
   }
 
-  return { q: parts.join(" "), videoDuration, order };
+  return { q: parts.join(" "), videoDuration, order, intent };
 }
 
 function reasonFor(
