@@ -181,6 +181,22 @@ function fitScore(
   return viewScore * durationFit;
 }
 
+function rankScore(v: ResultVideo, intent: SearchIntent, rawQuery: string, bucket: "short" | "medium" | "long" | "any") {
+  const hayTitle = v.title.toLowerCase();
+  const hayChannel = v.channel.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const creator = intent.creator?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+  const ageDays = Math.max(0, (Date.now() - new Date(v.publishedAt).getTime()) / 86_400_000);
+  const queryTerms = rawQuery.toLowerCase().split(/\s+/).filter((t) => t.length > 2 && !FRESHNESS_RE.test(t));
+  const titleMatches = queryTerms.filter((t) => hayTitle.includes(t)).length;
+  let score = fitScore(bucket, v.durationSeconds, v.viewCount);
+  if (creator && hayChannel.includes(creator)) score += 120;
+  if (intent.freshness) score += Math.max(0, 90 - ageDays / 2);
+  score += titleMatches * 10;
+  if (intent.contentType && hayTitle.includes(intent.contentType)) score += 14;
+  if (intent.mood && hayTitle.includes(intent.mood)) score += 12;
+  return score;
+}
+
 export type ResultPlaylist = {
   playlistId: string;
   title: string;
@@ -265,7 +281,7 @@ export const searchVideos = createServerFn({ method: "POST" })
       };
     }
 
-    const { q, videoDuration, order } = buildSearchQuery(data);
+    const { q, videoDuration, order, intent } = buildSearchQuery(data);
     const limit = data.maxResults ?? (data.mode === "find" ? 5 : data.mode === "explore" ? 5 : 7);
 
     const searchParams = new URLSearchParams({
@@ -278,6 +294,7 @@ export const searchVideos = createServerFn({ method: "POST" })
       key: apiKey,
     });
     if (videoDuration && videoDuration !== "any") searchParams.set("videoDuration", videoDuration);
+    if (data.pageToken) searchParams.set("pageToken", data.pageToken);
 
     try {
       // Run video + playlist searches in parallel for speed
@@ -290,9 +307,10 @@ export const searchVideos = createServerFn({ method: "POST" })
       if (!sRes.ok) {
         const body = await sRes.text();
         console.error("YouTube search failed", sRes.status, body);
-        return { error: `Search failed (${sRes.status})`, results: [] as ResultVideo[], playlists: [] as ResultPlaylist[], effectiveQuery: q };
+        return { error: `Search failed (${sRes.status})`, results: [] as ResultVideo[], playlists: [] as ResultPlaylist[], effectiveQuery: q, contextMessage: intent.message, nextPageToken: null as string | null };
       }
       const sJson = (await sRes.json()) as {
+        nextPageToken?: string;
         items: Array<{
           id: { videoId: string };
           snippet: {
@@ -307,7 +325,7 @@ export const searchVideos = createServerFn({ method: "POST" })
       };
 
       const ids = sJson.items.map((i) => i.id.videoId).filter(Boolean);
-      if (ids.length === 0) return { error: null, results: [] as ResultVideo[], playlists, effectiveQuery: q };
+      if (ids.length === 0) return { error: null, results: [] as ResultVideo[], playlists, effectiveQuery: q, contextMessage: intent.message, nextPageToken: sJson.nextPageToken ?? null };
 
       const dParams = new URLSearchParams({
         part: "contentDetails,statistics",
@@ -318,7 +336,7 @@ export const searchVideos = createServerFn({ method: "POST" })
       if (!dRes.ok) {
         const body = await dRes.text();
         console.error("YouTube videos failed", dRes.status, body);
-        return { error: `Details failed (${dRes.status})`, results: [] as ResultVideo[], playlists, effectiveQuery: q };
+        return { error: `Details failed (${dRes.status})`, results: [] as ResultVideo[], playlists, effectiveQuery: q, contextMessage: intent.message, nextPageToken: sJson.nextPageToken ?? null };
       }
       const dJson = (await dRes.json()) as {
         items: Array<{
@@ -360,17 +378,17 @@ export const searchVideos = createServerFn({ method: "POST" })
       const bucket = videoDuration ?? "any";
       results.sort(
         (a, b) =>
-          fitScore(bucket, b.durationSeconds, b.viewCount) -
-          fitScore(bucket, a.durationSeconds, a.viewCount),
+          rankScore(b, intent, data.query, bucket) -
+          rankScore(a, intent, data.query, bucket),
       );
 
       const trimmed = results.slice(0, limit);
       if (trimmed[0]) trimmed[0].primary = true;
 
-      return { error: null, results: trimmed, playlists, effectiveQuery: q };
+      return { error: null, results: trimmed, playlists, effectiveQuery: q, contextMessage: intent.message, nextPageToken: sJson.nextPageToken ?? null };
     } catch (err) {
       console.error("YouTube search error", err);
-      return { error: "Could not reach YouTube right now.", results: [] as ResultVideo[], playlists: [] as ResultPlaylist[], effectiveQuery: q };
+      return { error: "Could not reach YouTube right now.", results: [] as ResultVideo[], playlists: [] as ResultPlaylist[], effectiveQuery: q, contextMessage: intent.message, nextPageToken: null as string | null };
     }
   });
 
