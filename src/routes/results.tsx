@@ -352,8 +352,9 @@ function PlaylistCard({ p }: { p: ResultPlaylist }) {
 
   return (
     <div className="zen-card overflow-hidden">
-      <button
-        onClick={() => setOpen((o) => !o)}
+      <Link
+        to="/results"
+        search={{ playlistId: p.playlistId, playlistTitle: p.title }}
         className="flex w-full flex-col gap-4 p-4 text-left transition-colors hover:bg-accent/30 sm:flex-row sm:p-5"
       >
         <div className="relative shrink-0 overflow-hidden rounded-md bg-muted sm:w-64">
@@ -377,11 +378,11 @@ function PlaylistCard({ p }: { p: ResultPlaylist }) {
           <div className="mt-1 text-sm text-muted-foreground">{p.channel}</div>
           <p className="mt-2 text-sm text-muted-foreground">{p.reason}</p>
           <div className="mt-3 inline-flex items-center gap-1 text-xs text-primary">
-            <ChevronDown className={"h-3.5 w-3.5 transition-transform " + (open ? "rotate-180" : "")} />
-            {open ? "Hide videos" : "View videos"}
+            <Play className="h-3.5 w-3.5" />
+            Open focused playlist
           </div>
         </div>
-      </button>
+      </Link>
 
       {open && (
         <div className="border-t border-border bg-surface/40">
